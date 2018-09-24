@@ -839,6 +839,9 @@ def extract(image, tar):
         basename = os.path.basename(tarinfo.name)
         dirname = os.path.dirname(tarinfo.name)
 
+        # If we see an opaque whiteout file, then don't add anything to the
+        # tarball but ensure that any lower layers don't add files or
+        # directories which are siblings of the whiteout file.
         if basename == _OPAQUE_WHITEOUT_FILENAME:
           opaque_whiteouts_in_this_layer.append(dirname)
 
