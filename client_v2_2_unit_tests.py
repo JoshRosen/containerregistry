@@ -14,6 +14,7 @@
 
 from collections import OrderedDict
 import io
+from StringIO import StringIO
 import tarfile
 import unittest
 
@@ -21,17 +22,31 @@ from containerregistry.client.v2_2 import docker_image as v2_2_image
 
 
 class MockImage(object):
+  """Mock of DockerImage, implementing only the methods called by extract()."""
+
   def __init__(self):
     self._fs_layers = OrderedDict()
 
   def add_layer(self, filenames):
+    """Add a layer to the image.
+
+    Args:
+        filenames: a list of filenames or (filename, content) pairs. Filenames
+            with trailing slashes become directory entries in the generated tar
+    """
     buf = io.BytesIO()
     with tarfile.open(mode='w:', fileobj=buf) as tf:
-      for name in filenames:
+      for entry in filenames:
+        if (isinstance(entry, basestring)):
+          name = entry
+          content = ""
+        else:
+          (name, content) = entry
         tarinfo = tarfile.TarInfo(name)
+        tarinfo.size = len(content)
         if name.endswith("/"):
           tarinfo.type = tarfile.DIRTYPE
-        tf.addfile(tarinfo)
+        tf.addfile(tarinfo, fileobj=(StringIO(content) if content else None))
     buf.seek(0)
     new_layer_id = str(len(self._fs_layers))
     self._fs_layers[new_layer_id] = buf.getvalue()
@@ -45,22 +60,31 @@ class MockImage(object):
 
 class TestExtract(unittest.TestCase):
 
-  def _test_flatten(self, layer_filenames, expected_output_filenames):
+  def _test_flatten(self, layer_filenames, expected_flattened_output):
+    # Construct a mock DockerImage with the specified layers:
     img = MockImage()
     for filenames in layer_filenames:
       img.add_layer(filenames)
     buf = io.BytesIO()
+
+    # Run the actual extract logic:
     with tarfile.open(mode='w:', fileobj=buf) as tar:
       v2_2_image.extract(img, tar)
+
+    # Compare the extract() output to the expected results:
     buf.seek(0)
-    output_filenames = []
+    flattened_output = []
     with tarfile.open(mode='r', fileobj=buf) as tar:
       for tarinfo in tar:
         if tarinfo.isdir():
-          output_filenames.append(tarinfo.name + "/")
+          flattened_output.append(tarinfo.name + "/")
         else:
-          output_filenames.append(tarinfo.name)
-    self.assertEqual(output_filenames, expected_output_filenames)
+          contents = tar.extractfile(tarinfo).read()
+          if contents:
+            flattened_output.append((tarinfo.name, contents))
+          else:
+            flattened_output.append(tarinfo.name)
+    self.assertEqual(flattened_output, expected_flattened_output)
 
   def test_single_layer(self):
     self._test_flatten(
@@ -75,6 +99,15 @@ class TestExtract(unittest.TestCase):
         ["dir/file2", "file2"]
       ],
       ["dir/file2", "file2", "dir/", "dir/file1", "file"]
+    )
+
+  def test_highest_layer_of_file_takes_precedence(self):
+    self._test_flatten(
+      [
+        [("file", "a")],
+        [("file", "b")]
+      ],
+      [("file", "b")]
     )
 
   def test_single_file_whiteout(self):
