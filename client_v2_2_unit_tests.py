@@ -96,7 +96,7 @@ class TestExtract(unittest.TestCase):
     )
 
   def test_opaque_whiteout(self):
-    # Examples from https://github.com/opencontainers/image-spec/blob/master/layer.md#whiteouts
+    # Example from https://github.com/opencontainers/image-spec/blob/master/layer.md#whiteouts
     self._test_flatten(
       [
         ["a/", "a/b/", "a/b/c/", "a/b/c/bar"],
@@ -111,6 +111,22 @@ class TestExtract(unittest.TestCase):
         ["a/", "a/b/", "a/b/c/", "a/b/c/foo",  "a/.wh..wh..opq"],
       ],
       ["a/", "a/b/", "a/b/c/", "a/b/c/foo"],
+    )
+
+  def test_opaque_whiteout_preserves_parent_directory(self):
+    # Example from https://github.com/opencontainers/image-spec/blob/master/layer.md#whiteouts
+    self._test_flatten(
+      [
+        [
+          "bin/",
+          "bin/my-app-binary",
+          "bin/my-app-tools",
+          "bin/tools/",
+          "bin/tools/my-app-tool-one"
+        ],
+        ["bin/.wh..wh..opq"],
+      ],
+      ["bin/"],
     )
 
 
